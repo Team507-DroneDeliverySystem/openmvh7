@@ -1,0 +1,136 @@
+# Untitled - By: KaTal - Sun Apr 12 2020
+import sensor, image, time, pyb, mjpeg
+from pyb import UART
+#User Variables
+package_num = 307
+conformation =0
+uart = UART(3, 19200)
+#LED Control Variables
+red_led = pyb.LED(1)
+green_led = pyb.LED(2)
+blue_led = pyb.LED(3)
+ir_leds = pyb.LED(4)
+red_led.off()
+green_led.off()
+blue_led.off()
+ir_leds.off()
+#Camera Activation
+sensor.reset()
+sensor.set_pixformat(sensor.RGB565)
+sensor.set_framesize(sensor.QVGA)
+sensor.skip_frames(time = 2000)
+sensor.set_auto_gain(False) # must turn this off to prevent image washout...
+clock = time.clock()
+
+#QR Detection Activation
+while(True):
+    clock.tick()
+    img = sensor.snapshot()
+    img.lens_corr(1.8) # strength of 1.8 is good for the 2.8mm lens.
+    codes = img.find_qrcodes()
+    for code in codes:
+            img.draw_rectangle(code.rect(), color = (255, 0, 0))
+            print(code)
+    if codes:
+#The QR Code then verifies the correct package is being picked up
+#and that the box meets loading requirements.If the package is successfully
+#Verified, the LED on the camera will blink green. If not, the LED
+#will blink red with an error statement in the serial com.
+        if len(codes[0].payload()) != 9:
+            conformation =0;
+            print("Invalid QR")
+            red_led.toggle()
+        else:
+            if int(codes[0].payload()[0:3]) == package_num:
+                if int(codes[0].payload()[4])<=5:
+                    if int(codes[0].payload()[6]) <= 5 and int(codes[0].payload()[8]) <= 5:
+                        conformation =1;
+                        break
+                    else:
+                        print("Package Dimensions too large")
+                        conformation =0;
+                        red_led.toggle()
+                else:
+                    conformation =0;
+                    print("Package Weight exceeds threshold")
+                    red_led.toggle()
+            else:
+                conformation =0;
+                print("Incorrect Package")
+                red_led.toggle()
+
+    print("conformation: ",conformation)
+if conformation == 1:
+#Send the conformation code to the Arduino to begin loading 
+    while(True):
+        uart.write("1")
+        if (uart.any()):
+            print(uart.read())
+        time.sleep(1000)
+        
+    #Green flashing LED signals that the correct package has been identified
+    green_led.on()
+    pyb.delay(900)
+    green_led.off()
+    pyb.delay(900)
+    green_led.on()
+    pyb.delay(900)
+    green_led.off()
+    pyb.delay(900)
+    green_led.on()
+    pyb.delay(900)
+    green_led.off()
+    pyb.delay(2000)
+    ir_leds.on()
+    pyb.delay(2000)
+    ir_leds.off()
+    #Take Picture
+    sensor.skip_frames(time = 2000) # Give the user time to get ready.
+    sensor.snapshot().save(str(package_num)+ ".jpg")
+    #***Need SD Card to take picture
+    
+red_led.on()
+sensor.skip_frames(time = 2000) # Give the user time to get ready.
+
+red_led.off()
+blue_led.on()
+
+print("You're on camera!")
+sensor.snapshot().save(str(package_num)+ ".jpg") 
+
+blue_led.off()
+print("The picture has been taken")
+sensor.shutdown(True)
+print("The Camera is off")
+
+#Simulate Flight Time
+pyb.delay(5000)
+
+sensor.reset() # Initialize the camera sensor.
+sensor.set_pixformat(sensor.RGB565) # or sensor.GRAYSCALE
+sensor.set_framesize(sensor.QVGA) # or sensor.QQVGA (or others)
+sensor.skip_frames(time = 2000) # Let new settings take affect.
+clock = time.clock() # Tracks FPS.
+
+red_led.on()
+sensor.skip_frames(time = 2000) # Give the user time to get ready.
+
+red_led.off()
+blue_led.on()
+
+m = mjpeg.Mjpeg(str(package_num)+".mjpeg")
+
+print("You're on camera!")
+#Video begins recording
+#***Need SD Card to take video
+for i in range(200):
+    clock.tick()
+    m.add_frame(sensor.snapshot())
+    print(clock.fps())
+
+m.close(clock.fps())
+blue_led.off()
+print("Done! Reset the camera to see the saved recording.")
+
+#Power Saving
+sensor.shutdown(True)
